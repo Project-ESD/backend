@@ -9,11 +9,6 @@ const pool = new Pool({
     rejectUnauthorized: false
   }
 });
-
-/**
- * Initialize database using schema.sql in the same folder.
- * Safe to call multiple times; CREATE TABLE IF NOT EXISTS / IF NOT EXISTS indexes are used.
- */
 async function initDb() {
   try {
     const schemaPath = path.join(__dirname, '../schema.js');
@@ -25,7 +20,7 @@ async function initDb() {
     throw err;
   }
 
-  const sql = fs.readFileSync(schemaPath, 'utf8');
+  
 
   const client = await pool.connect();
   try {
