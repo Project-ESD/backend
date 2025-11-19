@@ -11,29 +11,13 @@ const pool = new Pool({
 });
 async function initDb() {
   try {
-    const schemaPath = path.join(__dirname, '../schema.js');
-    const schema = require(schemaPath);
+    const schemaPath = path.join(__dirname, '../schema.sql');
+    const schema = fs.readFileSync(schemaPath, 'utf8');
     await pool.query(schema);
     console.log('Database initialized successfully');
   } catch (err) {
     console.error('DB init error:', err);
     throw err;
-  }
-
-  
-
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
-    await client.query(sql);
-    await client.query('COMMIT');
-    console.log('Database initialized');
-  } catch (err) {
-    await client.query('ROLLBACK');
-    console.error('Database init failed:', err.message);
-    throw err;
-  } finally {
-    client.release();
   }
 }
 
