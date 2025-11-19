@@ -15,9 +15,14 @@ const pool = new Pool({
  * Safe to call multiple times; CREATE TABLE IF NOT EXISTS / IF NOT EXISTS indexes are used.
  */
 async function initDb() {
-  const schemaPath = path.join(__dirname, 'schema.sql');
-  if (!fs.existsSync(schemaPath)) {
-    throw new Error(`schema.sql not found at ${schemaPath}`);
+  try {
+    const schemaPath = path.join(__dirname, '../schema.js');
+    const schema = require(schemaPath);
+    await pool.query(schema);
+    console.log('Database initialized successfully');
+  } catch (err) {
+    console.error('DB init error:', err);
+    throw err;
   }
 
   const sql = fs.readFileSync(schemaPath, 'utf8');
