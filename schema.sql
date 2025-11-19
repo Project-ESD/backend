@@ -10,7 +10,7 @@ CREATE TABLE IF NOT EXISTS movies (
   poster_url TEXT,
   trailer_url TEXT,
   director VARCHAR(255),
-  cast TEXT[],
+  "cast" TEXT[],           -- <-- fixed here
   release_year INTEGER,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
