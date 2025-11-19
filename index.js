@@ -18,6 +18,9 @@ const pool = new Pool({
   }
 });
 
+// Initialize database (create tables)
+initDb().catch(err => console.error('DB init error:', err));
+
 // Root route
 app.get('/', (req, res) => {
   res.send('Hello World from Azure!');
