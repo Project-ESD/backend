@@ -204,6 +204,7 @@ app.get('/api/schedules', async (req, res) => {
         s.screen,
         s.available_seats,
         s.total_seats,
+        TO_CHAR(s.showtime_date, 'Dy') AS weekday,
         m.id AS movie_id,
         m.title,
         m.poster_url,
@@ -218,6 +219,29 @@ app.get('/api/schedules', async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// Get all schedules (with optional filters)
+app.get('/api/admin/schedules', async (req, res) => {
+  // Add filters as needed (date, theater, etc.)
+  const result = await pool.query('SELECT * FROM schedules ORDER BY showtime_date, showtime_time');
+  res.json(result.rows);
+});
+
+// Update a schedule
+app.put('/api/admin/schedules/:id', async (req, res) => {
+  const { movie_id, showtime_date, showtime_time, theater, screen, available_seats, total_seats } = req.body;
+  await pool.query(
+    'UPDATE schedules SET movie_id=$1, showtime_date=$2, showtime_time=$3, theater=$4, screen=$5, available_seats=$6, total_seats=$7 WHERE id=$8',
+    [movie_id, showtime_date, showtime_time, theater, screen, available_seats, total_seats, req.params.id]
+  );
+  res.sendStatus(200);
+});
+
+// Delete a schedule
+app.delete('/api/admin/schedules/:id', async (req, res) => {
+  await pool.query('DELETE FROM schedules WHERE id=$1', [req.params.id]);
+  res.sendStatus(200);
 });
 
 // Start server

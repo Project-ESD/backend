@@ -1,6 +1,5 @@
 const fs = require('fs');
 console.log('Script started');
-// Movie IDs (replace with your actual IDs if different)
 const movieIds = [30, 31, 32, 33, 34, 35, 36];
 
 // Theater and auditorium info
