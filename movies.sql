@@ -70,3 +70,47 @@ VALUES (
   ARRAY['Daniel Craig', 'Eva Green', 'Mads Mikkelsen', 'Judi Dench'],
   2006
   );
+
+INSERT INTO movies (title, genres, duration, rating, language, description, poster_url, trailer_url, director, "cast", release_year)
+VALUES (
+  'The Dark Knight',
+  ARRAY['Action', 'Crime', 'Drama'],
+  152,
+  'PG-13',
+  'English',
+  'When the menace known as the Joker wreaks havoc and chaos on the people of Gotham, Batman must accept one of the greatest psychological and physical tests of his ability to fight injustice.',
+  'https://m.media-amazon.com/images/M/MV5BMTMxNTMwODM0NF5BMl5BanBnXkFtZTcwODAyMTk2Mw@@._V1_FMjpg_UX1000_.jpg',
+  'https://youtube.com/thedarkknighttrailer',
+  'Christopher Nolan',
+  ARRAY['Christian Bale', 'Heath Ledger', 'Aaron Eckhart'],
+  2008
+);
+
+INSERT INTO movies (title, genres, duration, rating, language, description, poster_url, trailer_url, director, "cast", release_year)
+VALUES (
+  'The Batman',
+  ARRAY['Action', 'Crime', 'Drama'],
+  176,
+  'PG-13',
+  'English',
+  'When a sadistic serial killer begins murdering key political figures in Gotham, Batman is forced to investigate the city''s hidden corruption and question his family''s involvement.',
+  'https://m.media-amazon.com/images/M/MV5BMmU5NGJlMzAtMGNmOC00YjJjLTgyMzUtNjAyYmE4Njg5YWMyXkEyXkFqcGc@._V1_.jpg',
+  'https://youtube.com/thebatman2022trailer',
+  'Matt Reeves',
+  ARRAY['Robert Pattinson', 'Zoë Kravitz', 'Jeffrey Wright', 'Colin Farrell'],
+  2022
+);
+
+-- Casino Royale (movie_id 5) on 2025-11-21
+
+-- Cinema Nova Oulu, Auditorium 1 (145 seats)
+INSERT INTO schedules (movie_id, showtime_date, showtime_time, theater, screen, available_seats, total_seats)
+VALUES
+  (5, '2025-11-21', '18:30', 'Cinema Nova Oulu', 'Auditorium 1', 145, 145),
+  (5, '2025-11-21', '14:00', 'Cinema Nova Oulu', 'Auditorium 1', 145, 145);
+
+-- Kino Baltic Turku, Auditorium 3 (134 seats)
+INSERT INTO schedules (movie_id, showtime_date, showtime_time, theater, screen, available_seats, total_seats)
+VALUES
+  (5, '2025-11-21', '18:30', 'Kino Baltic Turku', 'Auditorium 3', 134, 134),
+    (5, '2025-11-21', '14:00', 'Kino Baltic Turku', 'Auditorium 3', 134, 134);

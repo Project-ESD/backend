@@ -193,6 +193,33 @@ app.delete('/api/schedules/:id', async (req, res) => {
   }
 });
 
+app.get('/api/schedules', async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT 
+        s.id AS schedule_id,
+        s.showtime_date,
+        s.showtime_time,
+        s.theater,
+        s.screen,
+        s.available_seats,
+        s.total_seats,
+        m.id AS movie_id,
+        m.title,
+        m.poster_url,
+        m.genres,
+        m.duration,
+        m.rating
+      FROM schedules s
+      JOIN movies m ON s.movie_id = m.id
+      ORDER BY s.showtime_date, s.showtime_time
+    `);
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Start server
 app.listen(port, () => {
   console.log(`Server running on port ${port}`);
