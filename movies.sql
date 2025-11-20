@@ -48,7 +48,7 @@ VALUES (
   124,
   'PG-13',
   'English',
-  'With the world now aware of his identity as Iron Man, Tony Stark must contend with both his declining health and a vengeful madman with ties to his father\'s legacy.',
+  'With the world now aware of his identity as Iron Man, Tony Stark must contend with both his declining health and a vengeful madman with ties to his father''s legacy.',
   'https://m.media-amazon.com/images/M/MV5BYWYyOGQzOGYtMGQ1My00ZWYxLTgzZjktZWYzN2IwYjkxYzM0XkEyXkFqcGc@._V1_FMjpg_UX1000_.jpg',
   'https://youtube.com/ironman2trailer',
   'Jon Favreau',
