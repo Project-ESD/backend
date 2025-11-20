@@ -7,10 +7,15 @@ require('dotenv').config();
 const app = express();
 const port = process.env.PORT || 3000;
 
-// Middleware
-app.use(cors());
-app.use(express.json());
+const allowedOrigins = [
+  'https://mango-forest-09c515d10.3.azurestaticapps.net',
+  'https://kind-grass-0976a9210.3.azurestaticapps.net'
+];
 
+app.use(cors({
+  origin: allowedOrigins,
+  credentials: true // if you use cookies or authentication
+}));
 // Database pool
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
