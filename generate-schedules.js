@@ -2,7 +2,6 @@ const fs = require('fs');
 console.log('Script started');
 const movieIds = [30, 31, 32, 33, 34, 35, 36];
 
-// Theater and auditorium info
 const theaters = [
   {
     name: 'Cinema Nova Oulu',
@@ -30,13 +29,11 @@ const theaters = [
   }
 ];
 
-// Date range (3 months)
 const startDate = new Date('2025-11-21');
 const days = 93;
-const showtime = '18:00';
+const showtimes = ['12:00', '15:00', '18:00', '21:00'];
 
-// Generate SQL
-let sql = `-- Auto-generated schedules for all auditoriums in all theaters over 7 days\n`;
+let sql = `-- Auto-generated schedules for all auditoriums in all theaters over ${days} days with multiple showtimes\n`;
 
 for (let i = 0; i < days; i++) {
   const date = new Date(startDate);
@@ -44,16 +41,26 @@ for (let i = 0; i < days; i++) {
   const dateStr = date.toISOString().slice(0, 10);
 
   theaters.forEach(theater => {
-    theater.auditoriums.forEach((aud, idx) => {
-      // Rotate movie for each auditorium and day
-      const movieId = movieIds[(i + idx) % movieIds.length];
-      sql += `INSERT INTO schedules (movie_id, showtime_date, showtime_time, theater, screen, available_seats, total_seats)\n`;
-      sql += `VALUES (${movieId}, '${dateStr}', '${showtime}', '${theater.name}', '${aud.screen}', ${aud.seats}, ${aud.seats});\n\n`;
+    theater.auditoriums.forEach((aud, audIdx) => {
+      // Track movies used for this auditorium on this day to avoid duplicates
+      let usedMovies = new Set();
+      showtimes.forEach((showtime, stIdx) => {
+        // Find the next unused movie for this auditorium/day
+        let movieOffset = 0;
+        let movieId;
+        do {
+          movieId = movieIds[(i + audIdx + stIdx + movieOffset) % movieIds.length];
+          movieOffset++;
+        } while (usedMovies.has(movieId) && movieOffset < movieIds.length);
+        usedMovies.add(movieId);
+
+        sql += `INSERT INTO schedules (movie_id, showtime_date, showtime_time, theater, screen, available_seats, total_seats)\n`;
+        sql += `VALUES (${movieId}, '${dateStr}', '${showtime}', '${theater.name}', '${aud.screen}', ${aud.seats}, ${aud.seats});\n\n`;
+      });
     });
   });
 }
 
-// Write to schedules.sql
 fs.writeFileSync('schedules.sql', sql);
 
-console.log('Generated schedules.sql with rotating movie schedule for all auditoriums.');
+console.log('Generated schedules.sql with rotating movie schedule for all auditoriums and multiple showtimes.');
