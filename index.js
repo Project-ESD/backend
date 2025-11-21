@@ -242,6 +242,18 @@ app.put('/api/admin/schedules/:id', async (req, res) => {
   );
   res.sendStatus(200);
 });
+app.get('/api/schedules/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const result = await pool.query('SELECT * FROM schedules WHERE id = $1', [id]);
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Schedule not found' });
+    }
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // Delete a schedule
 app.delete('/api/admin/schedules/:id', async (req, res) => {
