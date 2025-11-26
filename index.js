@@ -16,6 +16,7 @@ app.use(cors({
   origin: allowedOrigins,
   credentials: true // if you use cookies or authentication
 }));
+app.use(express.json());
 // Database pool
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -260,6 +261,165 @@ app.get('/api/schedules/:id', async (req, res) => {
 app.delete('/api/admin/schedules/:id', async (req, res) => {
   await pool.query('DELETE FROM schedules WHERE id=$1', [req.params.id]);
   res.sendStatus(200);
+});
+
+// THEATER MANAGEMENT ENDPOINTS
+
+// Get all theaters
+app.get('/api/theaters', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM theaters ORDER BY name');
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Get a specific theater
+app.get('/api/theaters/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const result = await pool.query('SELECT * FROM theaters WHERE id = $1', [id]);
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Theater not found' });
+    }
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Create a new theater
+app.post('/api/theaters', async (req, res) => {
+  try {
+    const { name, location } = req.body;
+    const query = 'INSERT INTO theaters (name, location) VALUES ($1, $2) RETURNING *';
+    const result = await pool.query(query, [name, location]);
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Update a theater
+app.put('/api/theaters/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, location } = req.body;
+    const query = 'UPDATE theaters SET name = $1, location = $2 WHERE id = $3 RETURNING *';
+    const result = await pool.query(query, [name, location, id]);
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Theater not found' });
+    }
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Delete a theater
+app.delete('/api/theaters/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const query = 'DELETE FROM theaters WHERE id = $1 RETURNING *';
+    const result = await pool.query(query, [id]);
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Theater not found' });
+    }
+    res.json({ message: 'Theater deleted', theater: result.rows[0] });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// AUDITORIUM MANAGEMENT ENDPOINTS
+
+// Get all auditoriums (optionally filtered by theater)
+app.get('/api/auditoriums', async (req, res) => {
+  try {
+    const { theater_id } = req.query;
+    let query = `
+      SELECT a.*, t.name as theater_name
+      FROM auditoriums a
+      JOIN theaters t ON a.theater_id = t.id
+    `;
+    let params = [];
+
+    if (theater_id) {
+      query += ' WHERE a.theater_id = $1';
+      params.push(theater_id);
+    }
+
+    query += ' ORDER BY t.name, a.name';
+    const result = await pool.query(query, params);
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Get auditoriums for a specific theater
+app.get('/api/theaters/:theater_id/auditoriums', async (req, res) => {
+  try {
+    const { theater_id } = req.params;
+    const query = 'SELECT * FROM auditoriums WHERE theater_id = $1 ORDER BY name';
+    const result = await pool.query(query, [theater_id]);
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Create a new auditorium
+app.post('/api/auditoriums', async (req, res) => {
+  try {
+    const { theater_id, name, total_seats } = req.body;
+    const query = `
+      INSERT INTO auditoriums (theater_id, name, total_seats)
+      VALUES ($1, $2, $3)
+      RETURNING *
+    `;
+    const result = await pool.query(query, [theater_id, name, total_seats || 100]);
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Update an auditorium
+app.put('/api/auditoriums/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, total_seats } = req.body;
+    const query = `
+      UPDATE auditoriums
+      SET name = $1, total_seats = $2
+      WHERE id = $3
+      RETURNING *
+    `;
+    const result = await pool.query(query, [name, total_seats, id]);
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Auditorium not found' });
+    }
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Delete an auditorium
+app.delete('/api/auditoriums/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const query = 'DELETE FROM auditoriums WHERE id = $1 RETURNING *';
+    const result = await pool.query(query, [id]);
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Auditorium not found' });
+    }
+    res.json({ message: 'Auditorium deleted', auditorium: result.rows[0] });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // Start server
