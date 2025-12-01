@@ -2,14 +2,26 @@ const express = require('express');
 const cors = require('cors');
 const { Pool } = require('pg');
 const { initDb } = require('./config/db-config');
+const Stripe = require('stripe');
 require('dotenv').config();
+
+
+
 
 const app = express();
 const port = process.env.PORT || 3000;
+const stripeSecretKey =
+  process.env.STRIPE_SECRET_KEY || 'sk_test_51SSD41I7jAP0ya485RmgXQVUKZhR3OA2UIX1CsJX5AZnt4iMgkSNrykJXBqXfBdCxulKXSZ48CZNfdajKF4b6bJS003htDuU29';
+const stripe = new Stripe(stripeSecretKey);
+
+const FRONTEND_URL =
+  process.env.FRONTEND_URL ||
+  'https://mango-forest-09c515d10.3.azurestaticapps.net';
 
 const allowedOrigins = [
   'https://mango-forest-09c515d10.3.azurestaticapps.net',
-  'https://kind-grass-0976a9210.3.azurestaticapps.net'
+  'https://kind-grass-0976a9210.3.azurestaticapps.net',
+  'http://localhost:5173'
 ];
 
 app.use(cors({
@@ -42,6 +54,67 @@ app.get('/api/health', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+// Create Stripe Checkout Session for ticket purchase
+app.post('/api/create-checkout-session', async (req, res) => {
+  try {
+    const { scheduleId, movieId, quantity, pricePerTicket } = req.body;
+
+    if (!scheduleId || !movieId || !quantity || !pricePerTicket) {
+      return res.status(400).json({ error: 'Missing required fields.' });
+    }
+
+    // Load movie and schedule from DB
+    const movieResult = await pool.query('SELECT * FROM movies WHERE id = $1', [movieId]);
+    const scheduleResult = await pool.query('SELECT * FROM schedules WHERE id = $1', [scheduleId]);
+
+    if (movieResult.rows.length === 0 || scheduleResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Movie or schedule not found.' });
+    }
+
+    const movie = movieResult.rows[0];
+    const schedule = scheduleResult.rows[0];
+
+    // Optional simple seat check
+    if (quantity > schedule.available_seats) {
+      return res.status(400).json({ error: 'Not enough available seats.' });
+    }
+
+    const unitAmountCents = Math.round(Number(pricePerTicket) * 100);
+
+    // Format date/time for description
+    const dateStr = schedule.showtime_date.toISOString
+      ? schedule.showtime_date.toISOString().split('T')[0]
+      : String(schedule.showtime_date).slice(0, 10);
+    const timeStr = String(schedule.showtime_time).slice(0, 5);
+
+    const session = await stripe.checkout.sessions.create({
+      mode: 'payment',
+      payment_method_types: ['card'],
+      line_items: [
+        {
+          price_data: {
+            currency: 'eur', // adjust if needed
+            product_data: {
+              name: `${movie.title} ticket`,
+              description: `${schedule.theater} • ${schedule.screen} • ${dateStr} ${timeStr}`
+            },
+            unit_amount: unitAmountCents
+          },
+          quantity
+        }
+      ],
+      success_url: `${FRONTEND_URL}/payment-success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${FRONTEND_URL}/payment-cancel`
+    });
+
+    return res.json({ url: session.url });
+  } catch (err) {
+    console.error('Stripe error:', err);
+    return res.status(500).json({ error: 'Unable to create checkout session.' });
+  }
+});
+
 
 // Get all movies
 app.get('/api/movies', async (req, res) => {
