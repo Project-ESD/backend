@@ -115,6 +115,308 @@ app.post('/api/create-checkout-session', async (req, res) => {
   }
 });
 
+// BOOKING AND SEAT RESERVATION ENDPOINTS
+
+// Get seat availability for a specific schedule
+app.get('/api/schedules/:scheduleId/seats', async (req, res) => {
+  try {
+    const { scheduleId } = req.params;
+
+    // Get all seats for this schedule's auditorium
+    const schedule = await pool.query(
+      `SELECT s.*, a.id as auditorium_id
+       FROM schedules s
+       JOIN auditoriums a ON s.theater_id = (SELECT id FROM theaters WHERE name = s.theater LIMIT 1)
+       AND a.name = s.screen
+       WHERE s.id = $1`,
+      [scheduleId]
+    );
+
+    if (schedule.rows.length === 0) {
+      return res.status(404).json({ error: 'Schedule not found' });
+    }
+
+    const auditoriumId = schedule.rows[0].auditorium_id;
+
+    // Get all seats in the auditorium
+    const allSeats = await pool.query(
+      'SELECT * FROM seat_layouts WHERE auditorium_id = $1 ORDER BY seat_row, seat_number',
+      [auditoriumId]
+    );
+
+    // Get reserved/taken seats for this schedule
+    const reservedSeats = await pool.query(
+      `SELECT seat_row, seat_number, status, reserved_until
+       FROM seat_reservations
+       WHERE schedule_id = $1
+       AND (status = 'reserved' OR status = 'confirmed')`,
+      [scheduleId]
+    );
+
+    const now = new Date();
+    const seatMap = allSeats.rows.map(seat => {
+      const reservation = reservedSeats.rows.find(
+        r => r.seat_row === seat.seat_row && r.seat_number === seat.seat_number
+      );
+
+      let status = 'available';
+      if (reservation) {
+        if (reservation.status === 'confirmed') {
+          status = 'taken';
+        } else if (reservation.status === 'reserved') {
+          const reservedUntil = new Date(reservation.reserved_until);
+          if (reservedUntil > now) {
+            status = 'reserved';
+          } else {
+            status = 'available'; // Expired reservation
+          }
+        }
+      }
+
+      return {
+        row: seat.seat_row,
+        number: seat.seat_number,
+        status
+      };
+    });
+
+    res.json(seatMap);
+  } catch (err) {
+    console.error('Error fetching seats:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Create booking with seat reservation
+app.post('/api/create-booking', async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { scheduleId, movieId, email, seats } = req.body;
+
+    if (!scheduleId || !movieId || !email || !seats || seats.length === 0) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    await client.query('BEGIN');
+
+    // Get schedule and movie info
+    const scheduleResult = await client.query('SELECT * FROM schedules WHERE id = $1', [scheduleId]);
+    const movieResult = await client.query('SELECT * FROM movies WHERE id = $1', [movieId]);
+
+    if (scheduleResult.rows.length === 0 || movieResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Movie or schedule not found' });
+    }
+
+    const schedule = scheduleResult.rows[0];
+    const movie = movieResult.rows[0];
+
+    // Check if seats are available
+    for (const seat of seats) {
+      const existing = await client.query(
+        `SELECT * FROM seat_reservations
+         WHERE schedule_id = $1
+         AND seat_row = $2
+         AND seat_number = $3
+         AND (status = 'reserved' OR status = 'confirmed')
+         AND (status = 'confirmed' OR reserved_until > NOW())`,
+        [scheduleId, seat.row, seat.number]
+      );
+
+      if (existing.rows.length > 0) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({
+          error: `Seat ${seat.row}${seat.number} is already taken or reserved`
+        });
+      }
+    }
+
+    // Get ticket prices
+    const pricesResult = await client.query('SELECT * FROM ticket_prices');
+    const prices = {};
+    pricesResult.rows.forEach(p => {
+      prices[p.ticket_type] = parseFloat(p.price);
+    });
+
+    // Calculate total
+    const totalAmount = seats.reduce((sum, seat) => {
+      return sum + (prices[seat.ticketType] || 10);
+    }, 0);
+
+    // Create booking
+    const bookingResult = await client.query(
+      `INSERT INTO bookings (schedule_id, customer_email, total_amount, payment_status)
+       VALUES ($1, $2, $3, 'pending')
+       RETURNING *`,
+      [scheduleId, email, totalAmount]
+    );
+
+    const booking = bookingResult.rows[0];
+
+    // Reserve seats (5 minutes from now)
+    const reservedUntil = new Date(Date.now() + 5 * 60 * 1000);
+
+    for (const seat of seats) {
+      await client.query(
+        `INSERT INTO seat_reservations
+         (booking_id, schedule_id, seat_row, seat_number, ticket_type, price, status, reserved_until)
+         VALUES ($1, $2, $3, $4, $5, $6, 'reserved', $7)`,
+        [
+          booking.id,
+          scheduleId,
+          seat.row,
+          seat.number,
+          seat.ticketType,
+          prices[seat.ticketType] || 10,
+          reservedUntil
+        ]
+      );
+    }
+
+    // Create Stripe checkout session
+    const dateStr = schedule.showtime_date.toISOString
+      ? schedule.showtime_date.toISOString().split('T')[0]
+      : String(schedule.showtime_date).slice(0, 10);
+    const timeStr = String(schedule.showtime_time).slice(0, 5);
+
+    const session = await stripe.checkout.sessions.create({
+      mode: 'payment',
+      payment_method_types: ['card'],
+      customer_email: email,
+      line_items: seats.map(seat => ({
+        price_data: {
+          currency: 'eur',
+          product_data: {
+            name: `${movie.title} - ${seat.ticketType === 'adult' ? 'Adult' : 'Child'} Ticket`,
+            description: `Seat ${seat.row}${seat.number} • ${schedule.theater} • ${schedule.screen} • ${dateStr} ${timeStr}`
+          },
+          unit_amount: Math.round((prices[seat.ticketType] || 10) * 100)
+        },
+        quantity: 1
+      })),
+      success_url: `${FRONTEND_URL}/payment-success?session_id={CHECKOUT_SESSION_ID}&booking_id=${booking.id}`,
+      cancel_url: `${FRONTEND_URL}/payment-cancel?booking_id=${booking.id}`,
+      metadata: {
+        booking_id: booking.id.toString(),
+        schedule_id: scheduleId.toString()
+      }
+    });
+
+    // Update booking with Stripe session ID
+    await client.query(
+      'UPDATE bookings SET stripe_session_id = $1 WHERE id = $2',
+      [session.id, booking.id]
+    );
+
+    await client.query('COMMIT');
+
+    res.json({
+      bookingId: booking.id,
+      checkoutUrl: session.url
+    });
+
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('Booking error:', err);
+    res.status(500).json({ error: 'Unable to create booking: ' + err.message });
+  } finally {
+    client.release();
+  }
+});
+
+// Cancel/expire reservation
+app.post('/api/reservations/:bookingId/cancel', async (req, res) => {
+  try {
+    const { bookingId } = req.params;
+
+    await pool.query(
+      `UPDATE seat_reservations
+       SET status = 'cancelled'
+       WHERE booking_id = $1 AND status = 'reserved'`,
+      [bookingId]
+    );
+
+    await pool.query(
+      `UPDATE bookings
+       SET payment_status = 'cancelled'
+       WHERE id = $1`,
+      [bookingId]
+    );
+
+    res.json({ message: 'Reservation cancelled' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Clean up expired reservations (called by cron job or manually)
+app.post('/api/reservations/cleanup', async (req, res) => {
+  try {
+    const result = await pool.query(
+      `UPDATE seat_reservations
+       SET status = 'cancelled'
+       WHERE status = 'reserved'
+       AND reserved_until < NOW()
+       RETURNING *`
+    );
+
+    // Also mark associated bookings as cancelled
+    if (result.rows.length > 0) {
+      const bookingIds = [...new Set(result.rows.map(r => r.booking_id))];
+      await pool.query(
+        `UPDATE bookings
+         SET payment_status = 'cancelled'
+         WHERE id = ANY($1) AND payment_status = 'pending'`,
+        [bookingIds]
+      );
+    }
+
+    res.json({
+      message: 'Cleanup complete',
+      expiredReservations: result.rows.length
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Stripe webhook to confirm payment
+app.post('/api/webhook/stripe', express.raw({ type: 'application/json' }), async (req, res) => {
+  const sig = req.headers['stripe-signature'];
+  let event;
+
+  try {
+    event = stripe.webhooks.constructEvent(req.body, sig, process.env.STRIPE_WEBHOOK_SECRET);
+  } catch (err) {
+    console.error('Webhook signature verification failed:', err.message);
+    return res.status(400).send(`Webhook Error: ${err.message}`);
+  }
+
+  if (event.type === 'checkout.session.completed') {
+    const session = event.data.object;
+    const bookingId = session.metadata.booking_id;
+
+    // Confirm booking and seats
+    await pool.query(
+      `UPDATE bookings
+       SET payment_status = 'completed', stripe_payment_intent = $1
+       WHERE id = $2`,
+      [session.payment_intent, bookingId]
+    );
+
+    await pool.query(
+      `UPDATE seat_reservations
+       SET status = 'confirmed'
+       WHERE booking_id = $1`,
+      [bookingId]
+    );
+
+    console.log(`Booking ${bookingId} confirmed`);
+  }
+
+  res.json({ received: true });
+});
+
 
 // Get all movies
 app.get('/api/movies', async (req, res) => {
@@ -495,7 +797,34 @@ app.delete('/api/auditoriums/:id', async (req, res) => {
   }
 });
 
+// Automatic cleanup of expired reservations every minute
+setInterval(async () => {
+  try {
+    const result = await pool.query(
+      `UPDATE seat_reservations
+       SET status = 'cancelled'
+       WHERE status = 'reserved'
+       AND reserved_until < NOW()
+       RETURNING booking_id`
+    );
+
+    if (result.rows.length > 0) {
+      const bookingIds = [...new Set(result.rows.map(r => r.booking_id))];
+      await pool.query(
+        `UPDATE bookings
+         SET payment_status = 'cancelled'
+         WHERE id = ANY($1) AND payment_status = 'pending'`,
+        [bookingIds]
+      );
+      console.log(`[${new Date().toISOString()}] Cleaned up ${result.rows.length} expired reservations`);
+    }
+  } catch (err) {
+    console.error('Auto-cleanup error:', err);
+  }
+}, 60000); // Run every 60 seconds
+
 // Start server
 app.listen(port, () => {
   console.log(`Server running on port ${port}`);
+  console.log('Automatic seat reservation cleanup enabled (every 60 seconds)');
 });
