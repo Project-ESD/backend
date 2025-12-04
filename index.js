@@ -16,7 +16,7 @@ const stripe = new Stripe(stripeSecretKey);
 
 const FRONTEND_URL =
   process.env.FRONTEND_URL ||
-  'https://mango-forest-09c515d10.3.azurestaticapps.net';
+  'https://kind-grass-0976a9210.3.azurestaticapps.net';
 
 const allowedOrigins = [
   'https://mango-forest-09c515d10.3.azurestaticapps.net',
