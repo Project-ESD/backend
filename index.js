@@ -124,10 +124,12 @@ app.get('/api/schedules/:scheduleId/seats', async (req, res) => {
 
     // Get all seats for this schedule's auditorium
     const schedule = await pool.query(
-      `SELECT s.*, a.id as auditorium_id
+      `SELECT s.*,
+              t.id as theater_id,
+              a.id as auditorium_id
        FROM schedules s
-       JOIN auditoriums a ON s.theater_id = (SELECT id FROM theaters WHERE name = s.theater LIMIT 1)
-       AND a.name = s.screen
+       LEFT JOIN theaters t ON t.name = s.theater
+       LEFT JOIN auditoriums a ON a.theater_id = t.id AND a.name = s.screen
        WHERE s.id = $1`,
       [scheduleId]
     );
@@ -138,11 +140,23 @@ app.get('/api/schedules/:scheduleId/seats', async (req, res) => {
 
     const auditoriumId = schedule.rows[0].auditorium_id;
 
+    // If no auditorium found or no seat layouts yet, return empty array
+    if (!auditoriumId) {
+      console.warn(`No auditorium found for schedule ${scheduleId}`);
+      return res.json([]); // Return empty seat map
+    }
+
     // Get all seats in the auditorium
     const allSeats = await pool.query(
       'SELECT * FROM seat_layouts WHERE auditorium_id = $1 ORDER BY seat_row, seat_number',
       [auditoriumId]
     );
+
+    // If no seats defined yet, return empty array
+    if (allSeats.rows.length === 0) {
+      console.warn(`No seats defined for auditorium ${auditoriumId}`);
+      return res.json([]); // Return empty seat map until migration is run
+    }
 
     // Get reserved/taken seats for this schedule
     const reservedSeats = await pool.query(
