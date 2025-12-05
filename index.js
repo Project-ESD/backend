@@ -140,10 +140,10 @@ app.get('/api/schedules/:scheduleId/seats', async (req, res) => {
 
     const auditoriumId = schedule.rows[0].auditorium_id;
 
-    // If no auditorium found or no seat layouts yet, return empty array
+    // If no auditorium found or no seat layouts yet, return empty response
     if (!auditoriumId) {
       console.warn(`No auditorium found for schedule ${scheduleId}`);
-      return res.json([]); // Return empty seat map
+      return res.json({ seats: [], layout: { rows: [], seatsPerRow: 0, totalSeats: 0 } });
     }
 
     // Get all seats in the auditorium
@@ -155,8 +155,13 @@ app.get('/api/schedules/:scheduleId/seats', async (req, res) => {
     // If no seats defined yet, return empty array
     if (allSeats.rows.length === 0) {
       console.warn(`No seats defined for auditorium ${auditoriumId}`);
-      return res.json([]); // Return empty seat map until migration is run
+      return res.json({ seats: [], layout: { rows: 0, seatsPerRow: 0, totalSeats: 0 } });
     }
+
+    // Calculate layout metadata
+    const rows = [...new Set(allSeats.rows.map(s => s.seat_row))].sort();
+    const seatsPerRow = Math.max(...allSeats.rows.map(s => s.seat_number));
+    const totalSeats = allSeats.rows.length;
 
     // Get reserved/taken seats for this schedule
     const reservedSeats = await pool.query(
@@ -194,7 +199,14 @@ app.get('/api/schedules/:scheduleId/seats', async (req, res) => {
       };
     });
 
-    res.json(seatMap);
+    res.json({
+      seats: seatMap,
+      layout: {
+        rows: rows,
+        seatsPerRow: seatsPerRow,
+        totalSeats: totalSeats
+      }
+    });
   } catch (err) {
     console.error('Error fetching seats:', err);
     res.status(500).json({ error: err.message });
@@ -429,6 +441,16 @@ app.post('/api/webhook/stripe', express.raw({ type: 'application/json' }), async
   }
 
   res.json({ received: true });
+});
+
+// Get revenue data from the movie_revenue view
+app.get('/api/revenue', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM movie_revenue ORDER BY showtime_date DESC, showtime_time DESC');
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 
