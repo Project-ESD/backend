@@ -3,21 +3,10 @@ const cors = require('cors');
 const { Pool } = require('pg');
 const { initDb } = require('./config/db-config');
 const Stripe = require('stripe');
-require('dotenv').config();
-
-
-
+const stripe = new Stripe('sk_test_51SSD41I7jAP0ya485RmgXQVUKZhR3OA2UIX1CsJX5AZnt4iMgkSNrykJXBqXfBdCxulKXSZ48CZNfdajKF4b6bJS003htDuU29');
 
 const app = express();
 const port = process.env.PORT || 3000;
-
-// Initialize Stripe with secret key from environment variables
-// Falls back to hardcoded key if not set (for backward compatibility)
-const stripeSecretKey = process.env.STRIPE_SECRET_KEY || 'sk_test_51SSD41I7jAP0ya485RmgXQVUKZhR3OA2UIX1CsJX5AZnt4iMgkSNrykJXBqXfBdCxulKXSZ48CZNfdajKF4b6bJS003htDuU29';
-if (!process.env.STRIPE_SECRET_KEY) {
-  console.warn('WARNING: STRIPE_SECRET_KEY not set in environment variables, using fallback');
-}
-const stripe = new Stripe(stripeSecretKey);
 
 const FRONTEND_URL =
   process.env.FRONTEND_URL ||
@@ -422,7 +411,7 @@ app.post('/api/webhook/stripe', express.raw({ type: 'application/json' }), async
   let event;
 
   try {
-    event = stripe.webhooks.constructEvent(req.body, sig, process.env.STRIPE_WEBHOOK_SECRET);
+    event = stripe.webhooks.constructEvent(req.body, sig, 'whsec_your_webhook_secret_here');
   } catch (err) {
     console.error('Webhook signature verification failed:', err.message);
     return res.status(400).send(`Webhook Error: ${err.message}`);
