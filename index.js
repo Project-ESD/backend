@@ -169,6 +169,7 @@ app.get('/api/schedules/:scheduleId/seats', async (req, res) => {
     const totalSeats = allSeats.rows.length;
 
     // Get reserved/taken seats for this schedule
+    // Join with bookings to check if payment was completed
     const reservedSeats = await pool.query(
       `SELECT sr.seat_row, sr.seat_number, sr.status, sr.reserved_until, b.status as booking_status
        FROM seat_reservations sr
@@ -179,9 +180,6 @@ app.get('/api/schedules/:scheduleId/seats', async (req, res) => {
       [scheduleId]
     );
 
-    console.log(`Schedule ${scheduleId}: Found ${reservedSeats.rows.length} reservations`);
-    console.log('Reservations:', reservedSeats.rows);
-
     const now = new Date();
     const seatMap = allSeats.rows.map(seat => {
       const reservation = reservedSeats.rows.find(
@@ -190,10 +188,11 @@ app.get('/api/schedules/:scheduleId/seats', async (req, res) => {
 
       let status = 'available';
       if (reservation) {
-        // Check both seat reservation status AND booking status
+        // Seat is "taken" (red) only if BOTH seat_reservation AND booking are confirmed
         if (reservation.status === 'confirmed' && reservation.booking_status === 'confirmed') {
           status = 'taken';
         } else if (reservation.status === 'reserved' || reservation.booking_status === 'pending') {
+          // Seat is "reserved" (orange) during checkout or if payment not completed
           const reservedUntil = new Date(reservation.reserved_until);
           if (reservedUntil > now) {
             status = 'reserved';
