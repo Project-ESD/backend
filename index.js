@@ -405,53 +405,6 @@ app.post('/api/reservations/cleanup', async (req, res) => {
   }
 });
 
-// Verify and confirm payment (called from frontend after redirect)
-app.post('/api/verify-payment', async (req, res) => {
-  try {
-    const { sessionId, bookingId } = req.body;
-
-    if (!sessionId || !bookingId) {
-      return res.status(400).json({ error: 'Missing sessionId or bookingId' });
-    }
-
-    // Retrieve the session from Stripe to verify payment
-    const session = await stripe.checkout.sessions.retrieve(sessionId);
-
-    if (session.payment_status === 'paid') {
-      // Payment successful - confirm booking
-      await pool.query(
-        `UPDATE bookings
-         SET payment_status = 'completed', stripe_session_id = $1
-         WHERE id = $2`,
-        [sessionId, bookingId]
-      );
-
-      await pool.query(
-        `UPDATE seat_reservations
-         SET status = 'confirmed'
-         WHERE booking_id = $1`,
-        [bookingId]
-      );
-
-      console.log(`Booking ${bookingId} confirmed via payment verification`);
-
-      return res.json({
-        success: true,
-        message: 'Payment verified and booking confirmed'
-      });
-    } else {
-      return res.json({
-        success: false,
-        message: 'Payment not completed',
-        paymentStatus: session.payment_status
-      });
-    }
-  } catch (err) {
-    console.error('Error verifying payment:', err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
 // Stripe webhook to confirm payment
 app.post('/api/webhook/stripe', express.raw({ type: 'application/json' }), async (req, res) => {
   const sig = req.headers['stripe-signature'];
