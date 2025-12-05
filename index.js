@@ -10,9 +10,14 @@ require('dotenv').config();
 
 const app = express();
 const port = process.env.PORT || 3000;
-const stripeSecretKey =
-  process.env.STRIPE_SECRET_KEY || 'sk_test_51SSD41I7jAP0ya485RmgXQVUKZhR3OA2UIX1CsJX5AZnt4iMgkSNrykJXBqXfBdCxulKXSZ48CZNfdajKF4b6bJS003htDuU29';
-const stripe = new Stripe(stripeSecretKey);
+
+// Initialize Stripe with secret key from environment variables
+if (!process.env.STRIPE_SECRET_KEY) {
+  console.error('ERROR: STRIPE_SECRET_KEY is not set in environment variables');
+  console.error('Please add STRIPE_SECRET_KEY to your .env file');
+  process.exit(1);
+}
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
 const FRONTEND_URL =
   process.env.FRONTEND_URL ||
@@ -422,22 +427,26 @@ app.post('/api/webhook/stripe', express.raw({ type: 'application/json' }), async
     const session = event.data.object;
     const bookingId = session.metadata.booking_id;
 
-    // Confirm booking and seats
-    await pool.query(
-      `UPDATE bookings
-       SET payment_status = 'completed', stripe_payment_intent = $1
-       WHERE id = $2`,
-      [session.payment_intent, bookingId]
-    );
+    try {
+      // Confirm booking and seats
+      await pool.query(
+        `UPDATE bookings
+         SET status = 'confirmed', payment_status = 'completed', stripe_payment_intent = $1
+         WHERE id = $2`,
+        [session.payment_intent, bookingId]
+      );
 
-    await pool.query(
-      `UPDATE seat_reservations
-       SET status = 'confirmed'
-       WHERE booking_id = $1`,
-      [bookingId]
-    );
+      await pool.query(
+        `UPDATE seat_reservations
+         SET status = 'confirmed'
+         WHERE booking_id = $1`,
+        [bookingId]
+      );
 
-    console.log(`Booking ${bookingId} confirmed`);
+      console.log(`Booking ${bookingId} confirmed - payment successful`);
+    } catch (err) {
+      console.error(`Error confirming booking ${bookingId}:`, err);
+    }
   }
 
   res.json({ received: true });
