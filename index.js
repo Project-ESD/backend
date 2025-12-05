@@ -12,12 +12,12 @@ const app = express();
 const port = process.env.PORT || 3000;
 
 // Initialize Stripe with secret key from environment variables
+// Falls back to hardcoded key if not set (for backward compatibility)
+const stripeSecretKey = process.env.STRIPE_SECRET_KEY || 'sk_test_51SSD41I7jAP0ya485RmgXQVUKZhR3OA2UIX1CsJX5AZnt4iMgkSNrykJXBqXfBdCxulKXSZ48CZNfdajKF4b6bJS003htDuU29';
 if (!process.env.STRIPE_SECRET_KEY) {
-  console.error('ERROR: STRIPE_SECRET_KEY is not set in environment variables');
-  console.error('Please add STRIPE_SECRET_KEY to your .env file');
-  process.exit(1);
+  console.warn('WARNING: STRIPE_SECRET_KEY not set in environment variables, using fallback');
 }
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+const stripe = new Stripe(stripeSecretKey);
 
 const FRONTEND_URL =
   process.env.FRONTEND_URL ||
@@ -170,12 +170,17 @@ app.get('/api/schedules/:scheduleId/seats', async (req, res) => {
 
     // Get reserved/taken seats for this schedule
     const reservedSeats = await pool.query(
-      `SELECT seat_row, seat_number, status, reserved_until
-       FROM seat_reservations
-       WHERE schedule_id = $1
-       AND (status = 'reserved' OR status = 'confirmed')`,
+      `SELECT sr.seat_row, sr.seat_number, sr.status, sr.reserved_until, b.status as booking_status
+       FROM seat_reservations sr
+       JOIN bookings b ON sr.booking_id = b.id
+       WHERE sr.schedule_id = $1
+       AND (sr.status = 'reserved' OR sr.status = 'confirmed')
+       AND (b.status = 'pending' OR b.status = 'confirmed')`,
       [scheduleId]
     );
+
+    console.log(`Schedule ${scheduleId}: Found ${reservedSeats.rows.length} reservations`);
+    console.log('Reservations:', reservedSeats.rows);
 
     const now = new Date();
     const seatMap = allSeats.rows.map(seat => {
@@ -185,9 +190,10 @@ app.get('/api/schedules/:scheduleId/seats', async (req, res) => {
 
       let status = 'available';
       if (reservation) {
-        if (reservation.status === 'confirmed') {
+        // Check both seat reservation status AND booking status
+        if (reservation.status === 'confirmed' && reservation.booking_status === 'confirmed') {
           status = 'taken';
-        } else if (reservation.status === 'reserved') {
+        } else if (reservation.status === 'reserved' || reservation.booking_status === 'pending') {
           const reservedUntil = new Date(reservation.reserved_until);
           if (reservedUntil > now) {
             status = 'reserved';
