@@ -149,7 +149,7 @@ app.get('/api/schedules/:scheduleId/seats', async (req, res) => {
     // If no seats defined yet, return empty array
     if (allSeats.rows.length === 0) {
       console.warn(`No seats defined for auditorium ${auditoriumId}`);
-      return res.json({ seats: [], layout: { rows: 0, seatsPerRow: 0, totalSeats: 0 } });
+      return res.json({ seats: [], layout: { rows: [], seatsPerRow: 0, totalSeats: 0 } });
     }
 
     // Calculate layout metadata
@@ -160,12 +160,12 @@ app.get('/api/schedules/:scheduleId/seats', async (req, res) => {
     // Get reserved/taken seats for this schedule
     // Join with bookings to check if payment was completed
     const reservedSeats = await pool.query(
-      `SELECT sr.seat_row, sr.seat_number, sr.status, sr.reserved_until, b.status as booking_status
+      `SELECT sr.seat_row, sr.seat_number, sr.status, sr.reserved_until, b.payment_status
        FROM seat_reservations sr
        JOIN bookings b ON sr.booking_id = b.id
        WHERE sr.schedule_id = $1
        AND (sr.status = 'reserved' OR sr.status = 'confirmed')
-       AND (b.status = 'pending' OR b.status = 'confirmed')`,
+       AND (b.payment_status = 'pending' OR b.payment_status = 'completed')`,
       [scheduleId]
     );
 
@@ -177,10 +177,10 @@ app.get('/api/schedules/:scheduleId/seats', async (req, res) => {
 
       let status = 'available';
       if (reservation) {
-        // Seat is "taken" (red) only if BOTH seat_reservation AND booking are confirmed
-        if (reservation.status === 'confirmed' && reservation.booking_status === 'confirmed') {
+        // Seat is "taken" (red) only if BOTH seat_reservation AND booking payment are completed
+        if (reservation.status === 'confirmed' && reservation.payment_status === 'completed') {
           status = 'taken';
-        } else if (reservation.status === 'reserved' || reservation.booking_status === 'pending') {
+        } else if (reservation.status === 'reserved' || reservation.payment_status === 'pending') {
           // Seat is "reserved" (orange) during checkout or if payment not completed
           const reservedUntil = new Date(reservation.reserved_until);
           if (reservedUntil > now) {
@@ -422,10 +422,10 @@ app.post('/api/webhook/stripe', express.raw({ type: 'application/json' }), async
     const bookingId = session.metadata.booking_id;
 
     try {
-      // Confirm booking and seats
+      // Confirm booking payment and seats
       await pool.query(
         `UPDATE bookings
-         SET status = 'confirmed', payment_status = 'completed', stripe_payment_intent = $1
+         SET payment_status = 'completed', stripe_payment_intent = $1
          WHERE id = $2`,
         [session.payment_intent, bookingId]
       );
