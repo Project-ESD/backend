@@ -479,9 +479,9 @@ app.post('/api/reservations/:bookingId/cancel', async (req, res) => {
   try {
     const { bookingId } = req.params;
 
+    // Delete seat reservations instead of marking as cancelled
     await pool.query(
-      `UPDATE seat_reservations
-       SET status = 'cancelled'
+      `DELETE FROM seat_reservations
        WHERE booking_id = $1 AND status = 'reserved'`,
       [bookingId]
     );
@@ -501,16 +501,23 @@ app.post('/api/reservations/:bookingId/cancel', async (req, res) => {
 
 app.post('/api/reservations/cleanup', async (req, res) => {
   try {
-    const result = await pool.query(
-      `UPDATE seat_reservations
-       SET status = 'cancelled'
+    // Get booking IDs before deleting
+    const expiredSeats = await pool.query(
+      `SELECT DISTINCT booking_id
+       FROM seat_reservations
        WHERE status = 'reserved'
-       AND reserved_until < NOW()
-       RETURNING *`
+       AND reserved_until < NOW()`
     );
 
-    if (result.rows.length > 0) {
-      const bookingIds = [...new Set(result.rows.map(r => r.booking_id))];
+    const result = await pool.query(
+      `DELETE FROM seat_reservations
+       WHERE status = 'reserved'
+       AND reserved_until < NOW()
+       RETURNING id`
+    );
+
+    if (expiredSeats.rows.length > 0) {
+      const bookingIds = expiredSeats.rows.map(r => r.booking_id);
       await pool.query(
         `UPDATE bookings
          SET payment_status = 'cancelled'
@@ -895,23 +902,34 @@ app.delete('/api/auditoriums/:id', async (req, res) => {
 // Automatic cleanup of expired reservations every minute (60s)
 setInterval(async () => {
   try {
-    const result = await pool.query(
-      `UPDATE seat_reservations
-       SET status = 'cancelled'
+    // Get booking IDs before deleting
+    const expiredSeats = await pool.query(
+      `SELECT DISTINCT booking_id
+       FROM seat_reservations
        WHERE status = 'reserved'
-       AND reserved_until < NOW()
-       RETURNING booking_id`
+       AND reserved_until < NOW()`
     );
 
-    if (result.rows.length > 0) {
-      const bookingIds = [...new Set(result.rows.map(r => r.booking_id))];
+    if (expiredSeats.rows.length > 0) {
+      const bookingIds = expiredSeats.rows.map(r => r.booking_id);
+
+      // Delete expired seat reservations
+      const deleteResult = await pool.query(
+        `DELETE FROM seat_reservations
+         WHERE status = 'reserved'
+         AND reserved_until < NOW()
+         RETURNING id`
+      );
+
+      // Cancel related bookings
       await pool.query(
         `UPDATE bookings
          SET payment_status = 'cancelled'
          WHERE id = ANY($1) AND payment_status = 'pending'`,
         [bookingIds]
       );
-      console.log(`[${new Date().toISOString()}] Cleaned up ${result.rows.length} expired reservations`);
+
+      console.log(`[${new Date().toISOString()}] Cleaned up ${deleteResult.rows.length} expired reservations`);
     }
   } catch (err) {
     console.error('Auto-cleanup error:', err);
