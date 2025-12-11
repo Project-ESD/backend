@@ -528,46 +528,7 @@ app.post('/api/reservations/cleanup', async (req, res) => {
   }
 });
 
-// Stripe webhook to confirm payment
-app.post('/api/webhook/stripe', express.raw({ type: 'application/json' }), async (req, res) => {
-  const sig = req.headers['stripe-signature'];
-  let event;
 
-  try {
-    event = stripe.webhooks.constructEvent(req.body, sig, 'whsec_R96uN180Rvgv32UYmUjkXK4pF50sggLI');
-  } catch (err) {
-    console.error('Webhook signature verification failed:', err.message);
-    return res.status(400).send(`Webhook Error: ${err.message}`);
-  }
-
-  if (event.type === 'checkout.session.completed') {
-    const session = event.data.object;
-    const bookingId = session.metadata.booking_id;
-
-    try {
-      // Confirm booking payment and seats
-      await pool.query(
-        `UPDATE bookings
-         SET payment_status = 'completed', stripe_payment_intent = $1
-         WHERE id = $2`,
-        [session.payment_intent, bookingId]
-      );
-
-      await pool.query(
-        `UPDATE seat_reservations
-         SET status = 'confirmed'
-         WHERE booking_id = $1`,
-        [bookingId]
-      );
-
-      console.log(`Booking ${bookingId} confirmed - payment successful`);
-    } catch (err) {
-      console.error(`Error confirming booking ${bookingId}:`, err);
-    }
-  }
-
-  res.json({ received: true });
-});
 
 // Get revenue data from the movie_revenue view
 app.get('/api/revenue', async (req, res) => {
