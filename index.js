@@ -892,7 +892,7 @@ app.delete('/api/auditoriums/:id', async (req, res) => {
   }
 });
 
-// Automatic cleanup of expired reservations every minute
+// Automatic cleanup of expired reservations every minute (60s)
 setInterval(async () => {
   try {
     const result = await pool.query(
